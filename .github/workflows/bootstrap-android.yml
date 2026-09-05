@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   bootstrap:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'Import verified Android project')
     runs-on: ubuntu-latest
     steps:
       - name: Check out repair branch
@@ -57,6 +58,41 @@ jobs:
           test -f "$SOURCE/app/src/main/java/com/streetready/nrp/MainActivity.kt"
           echo "SOURCE_DIR=$SOURCE" >> "$GITHUB_ENV"
 
+      - name: Restore and verify curriculum asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat \
+            .bootstrap/course-b64-00 \
+            .bootstrap/course-b64-01 \
+            .bootstrap/course-b64-02 \
+            .bootstrap/course-b64-03 \
+            .bootstrap/course-b64-04 \
+            .bootstrap/course-b64-05 \
+            .bootstrap/course-b64-06 \
+            .bootstrap/course-b64-07 \
+            .bootstrap/course-b64-08 \
+            .bootstrap/course-b64-09 \
+            .bootstrap/course-b64-10 \
+            > "$RUNNER_TEMP/course.b64"
+          echo "192b9efd469ee1f7e770c4fff6f69aa9afe5707a1ee603fa3de6518a9fa2d446  $RUNNER_TEMP/course.b64" | sha256sum -c -
+          base64 --decode "$RUNNER_TEMP/course.b64" > "$RUNNER_TEMP/course.json.xz"
+          echo "9a51cd4a36576fc095f34f6006c21fca518033bd9cf1e5279be9b942d1cea38c  $RUNNER_TEMP/course.json.xz" | sha256sum -c -
+          xz -dc "$RUNNER_TEMP/course.json.xz" > "$SOURCE_DIR/app/src/main/assets/course.json"
+          echo "b05ea0496379762d7de0502b44ff924d2ea89c259211cba2eeaef7e039b81ec8  $SOURCE_DIR/app/src/main/assets/course.json" | sha256sum -c -
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          course_path = Path(os.environ["SOURCE_DIR"]) / "app/src/main/assets/course.json"
+          course = json.loads(course_path.read_text(encoding="utf-8"))
+          expected = {"chapters": 53, "lessonCards": 636, "questions": 424, "cases": 40, "ecgs": 48}
+          actual = {key: len(course[key]) for key in expected}
+          if actual != expected:
+              raise SystemExit(f"Curriculum integrity mismatch: {actual} != {expected}")
+          print("Curriculum integrity verified:", actual)
+          PY
+
       - name: Repair PracticeScreen syntax
         shell: bash
         run: |
@@ -94,9 +130,26 @@ jobs:
           ls -lh app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload diagnostic debug APK
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: StreetReady-NRP-diagnostic-debug-apk
+          name: StreetReady-NRP-v3-debug-apk
           path: ${{ env.SOURCE_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: Import verified project source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rsync -a --exclude='.git/' --exclude='.github/workflows/' "$SOURCE_DIR/" "$GITHUB_WORKSPACE/"
+          cd "$GITHUB_WORKSPACE"
+          rm -rf .bootstrap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "Import verified Android project"
+          git push origin HEAD:apk-build-fix
