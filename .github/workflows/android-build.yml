@@ -1,0 +1,61 @@
+name: Android build
+
+on:
+  push:
+    branches: [ apk-build-fix ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify curriculum asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "b05ea0496379762d7de0502b44ff924d2ea89c259211cba2eeaef7e039b81ec8  app/src/main/assets/course.json" | sha256sum -c -
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          course = json.loads(Path("app/src/main/assets/course.json").read_text(encoding="utf-8"))
+          expected = {"chapters": 53, "lessonCards": 636, "questions": 424, "cases": 40, "ecgs": 48}
+          actual = {key: len(course[key]) for key in expected}
+          if actual != expected:
+              raise SystemExit(f"Curriculum integrity mismatch: {actual} != {expected}")
+          print("Curriculum integrity verified:", actual)
+          PY
+
+      - name: Run unit tests and build debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon clean testDebugUnitTest assembleDebug --stacktrace
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          stat -c 'APK size: %s bytes' app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: StreetReady-NRP-v3-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
