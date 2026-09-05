@@ -34,7 +34,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/part-* | base64 --decode > "$RUNNER_TEMP/streetready.zip"
+          cat \
+            .bootstrap/part-00 \
+            .bootstrap/part-01 \
+            .bootstrap/part-02 \
+            .bootstrap/part-03 \
+            .bootstrap/part-04 \
+            .bootstrap/part-05 \
+            .bootstrap/part-06 \
+            .bootstrap/part-07 \
+            .bootstrap/part-08 \
+            .bootstrap/part-09 \
+            .bootstrap/part-09b \
+            .bootstrap/part-10 \
+            > "$RUNNER_TEMP/streetready.b64"
+          echo "adeb0a2f82f631cc1d0c4f2401630977999b77619819074b6583608717233a0f  $RUNNER_TEMP/streetready.b64" | sha256sum -c -
+          base64 --decode "$RUNNER_TEMP/streetready.b64" > "$RUNNER_TEMP/streetready.zip"
+          echo "68f2715e7fed0c1a24fc2feb8732037cac3bd494b70740fe3ca5070492bdb171  $RUNNER_TEMP/streetready.zip" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/streetready"
           unzip -q "$RUNNER_TEMP/streetready.zip" -d "$RUNNER_TEMP/streetready"
           echo "SOURCE_DIR=$RUNNER_TEMP/streetready/StreetReady-NRP-Android-v3" >> "$GITHUB_ENV"
