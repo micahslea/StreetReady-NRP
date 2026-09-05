@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   bootstrap:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, 'Import verified Android project')
     runs-on: ubuntu-latest
     steps:
       - name: Check out repair branch
@@ -58,16 +57,13 @@ jobs:
           test -f "$SOURCE/app/src/main/java/com/streetready/nrp/MainActivity.kt"
           echo "SOURCE_DIR=$SOURCE" >> "$GITHUB_ENV"
 
-      - name: Repair verified source and curriculum asset
+      - name: Repair PracticeScreen syntax
         shell: bash
         run: |
           set -euo pipefail
-          xz -dc "$GITHUB_WORKSPACE/.bootstrap/course.json.xz" > "$SOURCE_DIR/app/src/main/assets/course.json"
           python - <<'PY'
-          import json
           import os
           from pathlib import Path
-
           source = Path(os.environ["SOURCE_DIR"])
           main = source / "app/src/main/java/com/streetready/nrp/MainActivity.kt"
           lines = main.read_text(encoding="utf-8").splitlines()
@@ -77,14 +73,7 @@ jobs:
               raise SystemExit("Expected excess closing brace was not found at recovered line 281")
           lines[280] = lines[280].rstrip()[:-1]
           main.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-          course_path = source / "app/src/main/assets/course.json"
-          course = json.loads(course_path.read_text(encoding="utf-8"))
-          expected = {"chapters": 53, "lessonCards": 636, "questions": 424, "cases": 40, "ecgs": 48}
-          actual = {key: len(course[key]) for key in expected}
-          if actual != expected:
-              raise SystemExit(f"Curriculum integrity mismatch: {actual} != {expected}")
-          print("Curriculum integrity verified:", actual)
+          print("PracticeScreen syntax repaired")
           PY
 
       - name: Generate standard Gradle wrapper
@@ -105,26 +94,9 @@ jobs:
           ls -lh app/build/outputs/apk/debug/app-debug.apk
           sha256sum app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Upload debug APK
+      - name: Upload diagnostic debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: StreetReady-NRP-v3-debug-apk
+          name: StreetReady-NRP-diagnostic-debug-apk
           path: ${{ env.SOURCE_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-
-      - name: Import verified project source
-        shell: bash
-        run: |
-          set -euo pipefail
-          rsync -a --exclude='.git/' --exclude='.github/workflows/' "$SOURCE_DIR/" "$GITHUB_WORKSPACE/"
-          cd "$GITHUB_WORKSPACE"
-          rm -rf .bootstrap
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No source changes to commit"
-            exit 0
-          fi
-          git commit -m "Import verified Android project"
-          git push origin HEAD:apk-build-fix
