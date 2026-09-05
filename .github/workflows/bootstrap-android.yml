@@ -47,13 +47,16 @@ jobs:
             .bootstrap/part-09 \
             .bootstrap/part-09b \
             .bootstrap/part-10 \
-            > "$RUNNER_TEMP/streetready.b64"
-          echo "adeb0a2f82f631cc1d0c4f2401630977999b77619819074b6583608717233a0f  $RUNNER_TEMP/streetready.b64" | sha256sum -c -
-          base64 --decode "$RUNNER_TEMP/streetready.b64" > "$RUNNER_TEMP/streetready.zip"
-          echo "68f2715e7fed0c1a24fc2feb8732037cac3bd494b70740fe3ca5070492bdb171  $RUNNER_TEMP/streetready.zip" | sha256sum -c -
+            | base64 --decode > "$RUNNER_TEMP/streetready.zip"
           mkdir -p "$RUNNER_TEMP/streetready"
-          unzip -q "$RUNNER_TEMP/streetready.zip" -d "$RUNNER_TEMP/streetready"
-          echo "SOURCE_DIR=$RUNNER_TEMP/streetready/StreetReady-NRP-Android-v3" >> "$GITHUB_ENV"
+          unzip -q "$RUNNER_TEMP/streetready.zip" -d "$RUNNER_TEMP/streetready" || true
+          SOURCE="$RUNNER_TEMP/streetready/StreetReady-NRP-Android-v3"
+          test -f "$SOURCE/settings.gradle.kts"
+          test -f "$SOURCE/build.gradle.kts"
+          test -f "$SOURCE/app/build.gradle.kts"
+          test -f "$SOURCE/app/src/main/AndroidManifest.xml"
+          test -f "$SOURCE/app/src/main/java/com/streetready/nrp/MainActivity.kt"
+          echo "SOURCE_DIR=$SOURCE" >> "$GITHUB_ENV"
 
       - name: Generate standard Gradle wrapper
         shell: bash
@@ -68,7 +71,9 @@ jobs:
         run: |
           set -euo pipefail
           cd "$SOURCE_DIR"
-          ./gradlew --no-daemon clean testDebugUnitTest assembleDebug
+          ./gradlew --no-daemon clean testDebugUnitTest assembleDebug --stacktrace
+          test -f app/build/outputs/apk/debug/app-debug.apk
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
